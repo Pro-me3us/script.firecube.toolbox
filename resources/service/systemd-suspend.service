@@ -1,0 +1,47 @@
+# #  SPDX-License-Identifier: LGPL-2.1-or-later
+# #
+# #  This file is part of systemd.
+# #
+# #  systemd is free software; you can redistribute it and/or modify it
+# #  under the terms of the GNU Lesser General Public License as published by
+# #  the Free Software Foundation; either version 2.1 of the License, or
+# #  (at your option) any later version.
+#
+[Unit]
+Description=System Suspend
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c "\
+    python /storage/.kodi/addons/service.firecube_lightbar/led.py -n 1 -b 100 -f /storage/.kodi/addons/service.firecube_lightbar/resources/animations/active-end.animation & \
+    systemctl mask suspend.target; \
+    \
+    # Disable anything that might wake from suspend early \
+    # echo disabled > /sys/devices/platform/bt-dev/power/wakeup \
+    # echo disabled > /sys/devices/platform/ff80023c.aocec/power/wakeup \
+    echo disabled > /sys/devices/platform/rtc/power/wakeup; \
+    #echo disabled > /sys/devices/platform/rtc/input/input1/power/wakeup; \
+    \
+    # Turn off TV \
+    printf '\x20\x36' > /dev/aocec; \
+    \
+    # Pause Kodi \
+    pkill -STOP kodi.bin; \
+    \
+    # Suspend-to-idle \
+    echo freeze > /sys/power/state; \
+    \
+    # Wakeup \
+    # Turn on TV \
+    python /storage/.kodi/addons/service.firecube_lightbar/led.py -n 1 -b 100 -f /storage/.kodi/addons/service.firecube_lightbar/resources/animations/active-thinking.animation & \
+    printf '\x20\x04' > /dev/aocec & \
+    \
+    # Reset meson_remote \
+    # modprobe -r meson_remote && modprobe meson_remote; \
+    remotecfg /storage/.config/remote.conf; \
+    \
+    # Unpause Kodi \
+    pkill -CONT kodi.bin; \
+    \
+    systemctl unmask suspend.target; \
+    "
