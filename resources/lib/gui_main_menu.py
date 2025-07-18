@@ -116,7 +116,10 @@ class MainMenu(xbmcgui.WindowXMLDialog):
 
     def run_action(self, action):
         if action == "cube_update":
-            cube_update.apply_update()
+            if cube_update.apply_update():
+                self.list.reset()
+                self.load_menu()
+                self.update_description()
         elif action == "bt_sync":
             bt_sync.sync_firetv_remote()
         elif action == "wifi_mac":
@@ -141,7 +144,10 @@ class MainMenu(xbmcgui.WindowXMLDialog):
         elif action == "overclock":
             cpu_overclock.show_overclock_menu()
         elif action == "enable_dv":
-            dv_download.enable_dolby_vision()
+            if dv_download.enable_dolby_vision():
+                self.list.reset()
+                self.load_menu()
+                self.update_description()
         elif action == "commandcraft":
             commandcraft.run()
 

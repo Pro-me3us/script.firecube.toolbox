@@ -1,5 +1,3 @@
-# button_trigger.py
-
 import xbmcgui
 import subprocess
 from pathlib import Path
@@ -35,17 +33,23 @@ def unmount_product():
         pass
 
 def get_cube_button_triggers():
-    selected = 0
-    while True:
-        try:
-            mount_product()
-            if not ENV_TXT.exists():
-                notify("env.txt not found")
-                return
+    try:
+        mount_product()
+        if not ENV_TXT.exists():
+            notify("env.txt not found")
+            return
 
-            lines = ENV_TXT.read_text().splitlines()
-            kv = {line.split("=")[0]: line.split("=")[1] for line in lines if "=" in line}
+        lines = ENV_TXT.read_text().splitlines()
+        using_old_menu = any(line.startswith("trigger_menu=") for line in lines)
 
+        if not using_old_menu:
+            notify("This option only available with old boot menu.")
+            return
+
+        kv = {line.split("=")[0]: line.split("=")[1] for line in lines if "=" in line}
+        selected = 0
+
+        while True:
             menu = []
             for label, key in BUTTON_KEYS:
                 current = kv.get(key, "")
@@ -77,13 +81,12 @@ def get_cube_button_triggers():
                     updated = True
                     break
             if not updated:
-                lines.append(f"{key}={selected_value}")
+                lines += [f"{key}={selected_value}"]
 
             ENV_TXT.write_text("\n".join(lines) + "\n")
             notify(f"Updated {key} to {opts[method_sel]}")
 
-        except Exception as e:
-            notify(f"Error: {e}")
-            break
-        finally:
-            unmount_product()
+    except Exception as e:
+        notify(f"Error: {e}")
+    finally:
+        unmount_product()

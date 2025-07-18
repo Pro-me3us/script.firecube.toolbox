@@ -20,7 +20,7 @@ def enable_dolby_vision():
         target = DV_URLS["5.15"]
     else:
         xbmc.log(f"[DolbyVision] Unsupported kernel: {kernel}", xbmc.LOGERROR)
-        return
+        return False
 
     try:
         tmp_path = "/storage/dovi_tmp.ko"
@@ -30,5 +30,7 @@ def enable_dolby_vision():
             shutil.copyfileobj(response, out_file)
         os.rename(tmp_path, final_path)
         xbmc.executebuiltin('Notification("Dolby Vision", "dovi.ko added, reboot to enable", 5000)')
+        return True
     except Exception as e:
         xbmc.log(f"[DolbyVision] Error: {e}", xbmc.LOGERROR)
+        return False

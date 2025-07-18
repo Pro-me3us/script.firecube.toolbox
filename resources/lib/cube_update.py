@@ -1,10 +1,13 @@
 import subprocess
 import os
 import xbmcgui
+import xbmc
 import xbmcaddon
 import gzip
 import struct
 import time
+from pathlib import Path
+from shutil import copy2
 
 def is_update_available():
     try:
@@ -20,7 +23,7 @@ def is_update_available():
 
         return (
             boot_sum.strip() == "d231e9ea748bbf7bebd4d86904fe71cb" and
-            misc_sum.strip() != "3592c7222692ddb3e17ac0f3a0010dfd"
+            misc_sum.strip() != "121a9f3490076d85bc5e42dd469864d3"
         )
     except Exception as e:
         xbmcgui.Dialog().notification("Cube Update Check Failed", str(e), xbmcgui.NOTIFICATION_ERROR, 5000)
@@ -85,6 +88,17 @@ def _copy_dtb(addon_path):
     except Exception as e:
         xbmcgui.Dialog().notification("DTB Copy Failed", str(e), xbmcgui.NOTIFICATION_ERROR, 5000)
 
+def _copy_boot_menu_files(addon_path):
+    try:
+        src_dir = Path(addon_path) / "resources" / "update" / "boot_menu"
+        dst_dir = Path("/media/product/boot_menu")
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        for file in src_dir.glob("*"):
+            if file.is_file():
+                copy2(file, dst_dir / file.name)
+    except Exception as e:
+        xbmcgui.Dialog().notification("Boot Menu Copy Failed", str(e), xbmcgui.NOTIFICATION_ERROR, 5000)
+
 def _ensure_env(addon_path):
     try:
         os.makedirs("/media/product", exist_ok=True)
@@ -117,7 +131,11 @@ def apply_update():
         subprocess.run(["gzip", "-dc", img_gz_path], stdout=open("/dev/misc", "wb"), check=True)
         _copy_dtb(addon_path)
         _ensure_env(addon_path)
+        _copy_boot_menu_files(addon_path)
 
         xbmcgui.Dialog().notification("Cube Update", "Update applied successfully", xbmcgui.NOTIFICATION_INFO, 5000)
+        return True
     except Exception as e:
         xbmcgui.Dialog().notification("Cube Update Failed", str(e), xbmcgui.NOTIFICATION_ERROR, 5000)
+        
+    return False

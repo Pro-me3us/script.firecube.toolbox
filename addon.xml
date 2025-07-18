@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="plugin.firecube.toolbox"
        name="Fire Cube Toolbox"
-       version="1.2.0"
+       version="1.3"
        provider-name="pro-me3us">
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>
@@ -11,6 +11,20 @@
         <summary>Amazon Fire TV Cube custom scripts</summary>
         <description>CoreELEC and bootup customizations, includes copying CE to eMMC, syncing BT remotes between FireOS/CE, changing boot order, and more. </description>
         <platform>all</platform>
+        <news>
+v1.3 (2025-07-17)
+- Added new boot menu
+
+v1.2 (2025-07-12)
+- eMMC install fix to prevent Cube update message when Cube already updated.
+
+v1.1 (2025-07-11)
+- New option to install CommandCraft app to FireOS (fork of Reboot to CoreELEC with all rebooting options for the Cube)
+- Addon wording changes, minor CE update tweak
+
+v1.0 (2025-07-08)
+- Initial release
+        </news>
         <assets>
             <icon>resources/icon.png</icon>
             <fanart>resources/skins/Default/media/fanart.png</fanart>
