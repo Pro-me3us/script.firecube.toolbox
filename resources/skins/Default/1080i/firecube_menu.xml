@@ -43,7 +43,7 @@
             <top>100</top>
             <width>1500</width>
             <height>940</height>
-            <texture>fanart.png</texture>
+            <texture>../../../fanart.png</texture>
             <aspectratio>scale</aspectratio>
             <colordiffuse>88888888</colordiffuse>
         </control>

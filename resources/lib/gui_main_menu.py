@@ -37,7 +37,7 @@ MENU_ITEMS = [
 
 DESCRIPTIONS = {
     "cube_update": "Update to get latest features and capabilities. Changes got into effect after a reboot",
-    "bt_sync": "Imports Bluetooth pairings from FireOS, allowing any Fire remotes to be Bluetooth paired in both CoreELEC and FireOS.  First pair remote in FireOS, then re-run this option to add it CoreELEC. Requires a reboot.",
+    "bt_sync": "Imports Bluetooth pairings from FireOS, allowing any Fire remotes to be Bluetooth paired in both CoreELEC and FireOS.  First pair remote in FireOS, then re-run this option to add it to CoreELEC.",
     "wifi_mac": "Change WiFi MAC address, or match the MAC used in FireOS.  The same default MAC is used by CoreELEC for all Cubes.  Avoid network conflicts when using more than one Cube on the same network. Requires a reboot, and WiFi password re-entry.",
     "suspend": "Allows suspend/waking Cube in CoreELEC.  Wakeup requires IR trigger defined in remote.conf.  Use FireOS equipment control setup to program remote to function in both Bluetooth and IR.  Fire television IR profile is used by default for wakeup.",
     "move_emmc": "Copy CoreELEC from USB Stick entirely to eMMC (/flash and /storage). Copy /flash to eMMC from previous USB/hybrid install (USB stick no longer needed to boot), choose /flash only.",

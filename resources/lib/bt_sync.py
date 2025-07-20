@@ -11,8 +11,6 @@ import time
 __addon__ = xbmcaddon.Addon()
 __addonname__ = __addon__.getAddonInfo('name')
 
-
-# Helpers
 def log(msg):
     xbmc.log(f"[{__addonname__}] {msg}", level=xbmc.LOGNOTICE)
 
@@ -76,6 +74,64 @@ Latency=49
 Timeout=500
 """
 
+def write_autostart_bt_mac(new_adapter_mac):
+    dt_id_path = Path("/proc/device-tree/amlogic-dt-id")
+    if not dt_id_path.exists():
+        return
+    dt_id = dt_id_path.read_bytes().split(b'\x00', 1)[0].decode()
+    if dt_id != "g12brevb_raven_2g":
+        return
+
+    autostart_path = Path("/storage/.config/autostart.sh")
+    bt_cmd = 'hcitool -i hci0 cmd 0x3F 0x1A ' + ' '.join(reversed(new_adapter_mac.split(':')))
+    bt_block = [
+        "# Set Bluetooth MAC address to match FireOS",
+        "for i in $(seq 1 20); do",
+        "    hciconfig hci0 > /dev/null 2>&1 && break",
+        "    sleep 1",
+        "done",
+        bt_cmd,
+        "hciconfig hci0 down",
+        "hciconfig hci0 up",
+        "systemctl restart bluetooth.service"
+    ]
+    wrapped_block = ["("] + bt_block + [")&"]
+
+    if autostart_path.exists():
+        content = autostart_path.read_text()
+        if bt_cmd not in content:
+            with autostart_path.open("a") as f:
+                f.write('\n' + '\n'.join(wrapped_block) + '\n')
+    else:
+        autostart_path.parent.mkdir(parents=True, exist_ok=True)
+        autostart_path.write_text("#!/bin/sh\n" + '\n'.join(wrapped_block) + '\n')
+        autostart_path.chmod(0o755)
+
+def modify_wifi_cfg():
+    dt_id_path = Path("/proc/device-tree/amlogic-dt-id")
+    if not dt_id_path.exists():
+        return
+    dt_id = dt_id_path.read_bytes().split(b'\x00', 1)[0].decode()
+    if dt_id != "g12brevb_raven_2g":
+        return
+
+    dst_path = Path("/storage/.config/firmware/wifi.cfg")
+    src_path = Path("/usr/lib/kernel-overlays/base/lib/firmware/wifi.cfg")
+
+    if not dst_path.exists() and src_path.exists():
+        dst_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(src_path, dst_path)
+
+    if dst_path.exists():
+        lines = dst_path.read_text().splitlines()
+        updated = False
+        for i, line in enumerate(lines):
+            if line.strip().startswith("EfuseBufferModeCal"):
+                lines[i] = "EfuseBufferModeCal 2"
+                updated = True
+                break
+        if updated:
+            dst_path.write_text('\n'.join(lines) + '\n')
 
 def sync_firetv_remote():
     notify("Syncing Bluetooth remote...")
@@ -103,6 +159,8 @@ def sync_firetv_remote():
         return False
 
     new_adapter_mac = bt_config['Adapter']['Address'].upper()
+    write_autostart_bt_mac(new_adapter_mac)
+    modify_wifi_cfg()
 
     old_cache_path = Path(f"/storage/.cache/bluetooth/{default_ctrl_mac}")
     new_cache_path = Path(f"/storage/.cache/bluetooth/{new_adapter_mac}")
@@ -133,36 +191,22 @@ def sync_firetv_remote():
 
             imported_macs.append(remote_mac)
 
+    subprocess.run(["umount", "/media/data"], check=False)
+
+    # Apply MAC override immediately for g12brevb_raven_2g
     dt_id_path = Path("/proc/device-tree/amlogic-dt-id")
     if dt_id_path.exists():
         try:
             dt_id = dt_id_path.read_bytes().split(b'\x00', 1)[0].decode()
             if dt_id == "g12brevb_raven_2g":
-                eeprom_src = Path("/usr/lib/kernel-overlays/base/lib/firmware/EEPROM_MT7668.bin")
-                #eeprom_src = Path("/vendor/firmware/EEPROM_MT7668.bin")
-                eeprom_dst_dir = Path("/storage/.config/firmware")
-                eeprom_dst = eeprom_dst_dir / "EEPROM_MT7668.bin"
-
-                if eeprom_src.exists():
-                    mac_bytes = bytes.fromhex(new_adapter_mac.replace(":", ""))
-                    reversed_mac = mac_bytes[::-1]
-
-                    with open(eeprom_src, "rb") as f:
-                        data = bytearray(f.read())
-
-                    if len(data) >= 0x384 + 6:
-                        data[0x384:0x384 + 6] = reversed_mac
-                        eeprom_dst_dir.mkdir(parents=True, exist_ok=True)
-                        with open(eeprom_dst, "wb") as f:
-                            f.write(data)
+                bt_cmd = ['hcitool', '-i', 'hci0', 'cmd', '0x3F', '0x1A'] + list(reversed(new_adapter_mac.split(':')))
+                subprocess.run(bt_cmd, check=False)
         except Exception as e:
-            log(f"EEPROM update skipped: {e}")
+            log(f"Immediate BT MAC override failed: {e}")
 
-    subprocess.run(["umount", "/media/data"], check=False)
+    subprocess.run(["hciconfig", "hci0", "down"], check=False)
+    subprocess.run(["hciconfig", "hci0", "up"], check=False)
     subprocess.run(["systemctl", "restart", "bluetooth.service"], check=False)
-    time.sleep(1)
-    subprocess.run(["bluetoothctl", "power", "on"], check=False)
-
 
     if imported_macs:
         xbmcgui.Dialog().ok(__addonname__, f"Imported remotes:\n" + '\n'.join(imported_macs))
@@ -170,7 +214,6 @@ def sync_firetv_remote():
         notify("No remotes were imported.")
 
     return True
-
 
 def show_multitool_menu():
     options = [
@@ -181,7 +224,6 @@ def show_multitool_menu():
 
     if choice == 0:
         sync_firetv_remote()
-
 
 if __name__ == '__main__':
     show_multitool_menu()
