@@ -13,6 +13,7 @@ from resources.lib import (
     suspend_service,
     cpu_overclock,
     cube_update,
+    fireos_ota,
     ir_trigger,
     button_trigger,
     dv_download,
@@ -21,6 +22,58 @@ from resources.lib import (
 
 ADDON_PATH = xbmcaddon.Addon().getAddonInfo('path')
 UPDATE_GZ = os.path.join(ADDON_PATH, "resources", "update", "misc.img.gz")
+
+def get_pending_ota_package_size():
+    mountpoint = "/media/data"
+    mounted = False
+
+    try:
+        os.makedirs(mountpoint, exist_ok=True)
+
+        result = subprocess.call(
+            ["mount", "/dev/data", mountpoint],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
+        if result != 0:
+            return None
+
+        mounted = True
+
+        ota_dir = os.path.join(mountpoint, "ota_package")
+
+        if not os.path.isdir(ota_dir):
+            return 0
+
+        total_size = 0
+
+        for root, dirs, files in os.walk(ota_dir):
+            for name in files:
+                path = os.path.join(root, name)
+                try:
+                    total_size += os.path.getsize(path)
+                except OSError:
+                    pass
+
+        return total_size
+
+    finally:
+        if mounted:
+            subprocess.call(
+                ["umount", "/dev/data"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+
+def format_size(num_bytes):
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if num_bytes < 1024 or unit == "TB":
+            if unit == "B":
+                return f"{num_bytes} {unit}"
+            return f"{num_bytes:.1f} {unit}"
+        num_bytes /= 1024
+                    
 
 MENU_ITEMS = [
     ("Bluetooth sync FireOS Fire remotes with CoreELEC", "bt_sync"),
@@ -36,7 +89,8 @@ MENU_ITEMS = [
 ]
 
 DESCRIPTIONS = {
-    "cube_update": "Update to get latest features and capabilities. Changes got into effect after a reboot",
+    "cube_update": "Update to get latest features and capabilities. Changes got into effect after a reboot.",
+    "fireos_ota": "A partial firmware download is present in the FireOS OTA folder.  Most likely left over from the initial FireOS setup & registration process.  Safely clear the folder to free up eMMC storage space.",
     "bt_sync": "Imports Bluetooth pairings from FireOS, allowing any Fire remotes to be Bluetooth paired in both CoreELEC and FireOS.  First pair remote in FireOS, then re-run this option to add it to CoreELEC.",
     "wifi_mac": "Change WiFi MAC address, or match the MAC used in FireOS.  The same default MAC is used by CoreELEC for all Cubes.  Avoid network conflicts when using more than one Cube on the same network. Requires a reboot, and WiFi password re-entry.",
     "suspend": "Allows suspend/waking Cube in CoreELEC.  Wakeup requires IR trigger defined in remote.conf.  Use FireOS equipment control setup to program remote to function in both Bluetooth and IR.  Fire television IR profile is used by default for wakeup.",
@@ -78,9 +132,28 @@ class MainMenu(xbmcgui.WindowXMLDialog):
             current_ts = cube_update._read_misc_timestamp("/dev/misc")
             if update_ts and current_ts and update_ts > current_ts:
                 items.insert(0, ("Cube update for CE available", "cube_update"))
+                
+        ota_size = get_pending_ota_package_size()
+
+        if ota_size and ota_size > 0:
+            insert_index = 1 if items and items[0][1] == "cube_update" else 0
+
+            items.insert(
+                insert_index,
+                (
+                    f"Safely clear FireOS OTA download folder to free {format_size(ota_size)} (Recommended)", "fireos_ota"
+                )
+            )               
 
         if not any(os.path.exists(p) for p in ["/flash/dovi.ko", "/storage/dovi.ko", "/storage/.config/dovi.ko"]):
-            insert_index = 1 if items and items[0][1] == "cube_update" else 0
+            insert_index = 0
+
+            if items and items[0][1] == "cube_update":
+                insert_index += 1
+
+            if any(action == "fireos_ota" for _, action in items):
+                insert_index += 1
+
             items.insert(insert_index, ("Enable Dolby Vision", "enable_dv"))
 
         self.menu_items = items
@@ -120,6 +193,11 @@ class MainMenu(xbmcgui.WindowXMLDialog):
                 self.list.reset()
                 self.load_menu()
                 self.update_description()
+        elif action == "fireos_ota":
+                if fireos_ota.clear():
+                    self.list.reset()
+                    self.load_menu()
+                    self.update_description()       
         elif action == "bt_sync":
             bt_sync.sync_firetv_remote()
         elif action == "wifi_mac":

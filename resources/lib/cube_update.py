@@ -23,7 +23,7 @@ def is_update_available():
 
         return (
             boot_sum.strip() == "d231e9ea748bbf7bebd4d86904fe71cb" and
-            misc_sum.strip() != "121a9f3490076d85bc5e42dd469864d3"
+            misc_sum.strip() != "b716b751d77b308c8b487ebd22c5c447"
         )
     except Exception as e:
         xbmcgui.Dialog().notification("Cube Update Check Failed", str(e), xbmcgui.NOTIFICATION_ERROR, 5000)
