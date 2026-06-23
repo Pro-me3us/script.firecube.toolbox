@@ -57,7 +57,7 @@ ExecStart=/bin/sh -c "\
     # Turn on TV \
     printf '\x20\x04' > /dev/aocec & \
     uname -r | grep -q '^5\.' && bluetoothctl power on & \
-    echo 1 > /sys/class/graphics/fb0/blank & \
+    echo 0 > /sys/class/graphics/fb0/blank & \
     \
     # Restart Kodi \
     systemctl restart kodi; \
