@@ -13,28 +13,51 @@ Description=System Suspend
 [Service]
 Type=oneshot
 ExecStart=/bin/sh -c "\
-    python /storage/.kodi/addons/service.firecube_lightbar/led.py -n 1 -b 100 -f /storage/.kodi/addons/service.firecube_lightbar/resources/animations/active-end.animation & \
+    # Turn off TV \
+    printf '\x20\x36' > /dev/aocec & \
+    \
+    # LED off animation \
+    LED=/storage/.kodi/addons/service.firecube_lightbar; python $LED/led.py -n1 -b100 -f $LED/resources/animations/active-end.animation; \
     systemctl mask suspend.target; \
     \
     # Disable anything that might wake from suspend early \
     # echo disabled > /sys/devices/platform/bt-dev/power/wakeup \
     # echo disabled > /sys/devices/platform/ff80023c.aocec/power/wakeup \
     echo disabled > /sys/devices/platform/rtc/power/wakeup; \
+    echo disabled > /sys/devices/platform/ff8000a8.rtc/power/wakeup; \
     #echo disabled > /sys/devices/platform/rtc/input/input1/power/wakeup; \
-    \
-    # Turn off TV \
-    printf '\x20\x36' > /dev/aocec; \
+    uname -r | grep -q '^5\.' && echo on > /sys/bus/platform/devices/ffe03000.sdio/power/control; \
     \
     # Pause Kodi \
     pkill -STOP kodi.bin; \
+    uname -r | grep -q '^5\.' && bluetoothctl power off; \
+    \
+    # Turn off CPUs, set CPU0 to 100Mhz \
+    CPU0=/sys/devices/system/cpu/cpu0/cpufreq; CPU2=/sys/devices/system/cpu/cpu2/cpufreq; \
+    uname -r | grep -q '^5\.' && for cpu in cpu1 cpu2 cpu3 cpu4 cpu5; do echo 0 > /sys/devices/system/cpu/$cpu/online; done; \
+    min=$(cat $CPU0/scaling_min_freq); max=$(cat $CPU0/scaling_max_freq); gov0=$(cat $CPU0/scaling_governor); gov1=$(cat $CPU2/scaling_governor); \
+    echo 100000 > $CPU0/scaling_max_freq; echo 100000 > $CPU0/scaling_min_freq; \
     \
     # Suspend-to-idle \
     echo freeze > /sys/power/state; \
     \
+    \
     # Wakeup \
+    # Bring CPUs online - linux 5.15 \
+    uname -r | grep -q '^5\.' && for cpu in cpu1 cpu2 cpu3 cpu4 cpu5; do echo 1 > /sys/bus/cpu/devices/$cpu/online; done; \
+    \
+    # LED on animation \
+    systemd-run --no-block python $LED/led.py -n1 -b100 -f $LED/resources/animations/active-thinking.animation & \
+    \
+    # Restore CPU frequencies, toggle governor mode to restore full CPU performance \
+    echo $max > $CPU0/scaling_max_freq; echo $min > $CPU0/scaling_min_freq & \
+    echo ondemand > $CPU0/scaling_governor; sleep 0.5; echo performance > $CPU0/scaling_governor; sleep 0.5; echo $gov0 > $CPU0/scaling_governor & \
+    echo ondemand > $CPU2/scaling_governor; sleep 0.5; echo performance > $CPU2/scaling_governor; sleep 0.5; echo $gov1 > $CPU2/scaling_governor & \
+    \
     # Turn on TV \
-    python /storage/.kodi/addons/service.firecube_lightbar/led.py -n 1 -b 100 -f /storage/.kodi/addons/service.firecube_lightbar/resources/animations/active-thinking.animation & \
     printf '\x20\x04' > /dev/aocec & \
+    uname -r | grep -q '^5\.' && bluetoothctl power on & \
+    cec-client & pid=$! && sleep 5 && kill -9 $pid & \
     \
     # Reset meson_remote \
     # modprobe -r meson_remote && modprobe meson_remote; \
@@ -42,6 +65,9 @@ ExecStart=/bin/sh -c "\
     \
     # Unpause Kodi \
     pkill -CONT kodi.bin; \
+    \
+    # If Kodi is unresponsive, restart Kodi
+    sleep 0.2 && [ $(stat -c %Y /storage/.kodi/temp/kodi.log) -le $(kodi-send --action=/"Ping/" >/dev/null 2>&1; sleep .5; stat -c %Y /storage/.kodi/temp/kodi.log) ] && systemctl restart kodi; \
     \
     systemctl unmask suspend.target; \
     "
