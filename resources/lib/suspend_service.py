@@ -11,10 +11,8 @@ import subprocess
 __addon__ = xbmcaddon.Addon()
 __addonname__ = __addon__.getAddonInfo('name')
 
-SUSPEND_SERVICE_SRC = os.path.join(
-    __addon__.getAddonInfo('path'),
-    "resources", "service", "systemd-suspend.service"
-)
+SUSPEND_SERVICE_SRC = os.path.join(__addon__.getAddonInfo('path'),"resources", "service", "systemd-suspend.service")
+SUSPEND_SERVICE_RESTART_SRC = os.path.join(__addon__.getAddonInfo('path'),"resources", "service", "systemd-suspend.service.kodi-restart")
 SUSPEND_SERVICE_DEST = "/storage/.config/system.d/systemd-suspend.service"
 AUTOSTART_PATH = "/storage/.config/autostart.sh"
 REMOTE_LINE = "#amlogic NEC remote * Amazon Alexa Voice Remote Enhanced"
@@ -35,9 +33,10 @@ SHUTDOWN_MODE_MAP = {
 }
 
 def show_suspend_menu():
-    preselect = 0 if os.path.isfile(SUSPEND_SERVICE_DEST) else 1
+    preselect = 0 if os.path.isfile(SUSPEND_SERVICE_DEST) else 2
     options = [
-        "Enable suspend-to-idle service",
+        "Enable suspend service (quick wakeup)",
+        "Enable suspend service (Kodi restart on wakeup)",
         "Disable suspend-to-idle service"
     ]
     sel = xbmcgui.Dialog().select("Suspend-to-Idle", options, preselect=preselect)
@@ -46,6 +45,8 @@ def show_suspend_menu():
     if sel == 0:
         enable_suspend_service()
     elif sel == 1:
+        enable_suspend_service(restart_kodi=True)
+    elif sel == 2:
         disable_suspend_service()
 
 def get_shutdown_state():
@@ -118,17 +119,27 @@ def ensure_remote_conf():
             if not os.path.exists(REMOTE_PATHS[2]):
                 shutil.copyfile(REMOTE_SRC, REMOTE_PATHS[2])
 
-def enable_suspend_service():
+def enable_suspend_service(restart_kodi=False):
     try:
-        if os.path.exists(SUSPEND_SERVICE_SRC):
+        service_src = (
+            SUSPEND_SERVICE_RESTART_SRC
+            if restart_kodi
+            else SUSPEND_SERVICE_SRC
+        )
+
+        if os.path.exists(service_src):
             os.makedirs(os.path.dirname(SUSPEND_SERVICE_DEST), exist_ok=True)
-            shutil.copyfile(SUSPEND_SERVICE_SRC, SUSPEND_SERVICE_DEST)
+            shutil.copyfile(service_src, SUSPEND_SERVICE_DEST)
             subprocess.run(["systemctl", "daemon-reexec"], check=True)
             subprocess.run(["systemctl", "daemon-reload"], check=True)
             ensure_suspend_unmask_in_autostart()
             ensure_remote_conf()
         if set_shutdown_state("Suspend"):
-            xbmcgui.Dialog().notification("Suspend-to-Idle", "S2idle Service enabled", xbmcgui.NOTIFICATION_INFO, 4000)
+            message = ("S2idle Service enabled (Kodi restart)"
+                if restart_kodi
+                else "S2idle Service enabled"
+            )
+            xbmcgui.Dialog().notification("Suspend-to-Idle", message, xbmcgui.NOTIFICATION_INFO, 4000)
         else:
             xbmcgui.Dialog().notification("Suspend-to-Idle", "Failed to set Suspend state", xbmcgui.NOTIFICATION_ERROR, 5000)
     except Exception as e:
