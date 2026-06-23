@@ -30,13 +30,36 @@ def hex_to_dec_reversed(hex_str):
     return int(reverse_hex_bytes(hex_str), 16)
 
 def get_default_controller():
+    """Get the default Bluetooth controller MAC address reliably"""
     try:
-        output = subprocess.check_output(["bluetoothctl", "list"], text=True)
+        # Modern BlueZ compatible method: pipe command into bluetoothctl
+        output = subprocess.check_output(
+            "echo 'list' | bluetoothctl 2>/dev/null",
+            shell=True,
+            text=True
+        )
+        
+        for line in output.splitlines():
+            if "[default]" in line:
+                # Line format: Controller XX:XX:XX:XX:XX:XX [default]
+                return line.split()[1].upper()
+                
+    except Exception as e:
+        log(f"bluetoothctl list failed: {e}")
+
+    # Fallback: try direct command with timeout
+    try:
+        output = subprocess.check_output(
+            ["bluetoothctl", "list"],
+            text=True,
+            stderr=subprocess.DEVNULL
+        )
         for line in output.splitlines():
             if "[default]" in line:
                 return line.split()[1].upper()
-    except Exception:
-        pass
+    except Exception as e:
+        log(f"bluetoothctl fallback failed: {e}")
+
     return None
 
 def generate_bluez_info(remote_mac, pid_key, penc_key):
@@ -174,7 +197,8 @@ def sync_firetv_remote():
     imported_macs = []
 
     for section in bt_config.sections():
-        if not section.startswith("[") and bt_config[section].get("Name") == "Amazon Fire TV Remote":
+        name = bt_config[section].get("Name", "")
+        if not section.startswith("[") and name in ("Amazon Fire TV Remote", "AR"):
             remote_mac = section.upper()
             dest_path = new_cache_path / remote_mac
             dest_path.mkdir(parents=True, exist_ok=True)
