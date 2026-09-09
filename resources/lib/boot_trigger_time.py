@@ -10,12 +10,49 @@ __addonname__ = __addon__.getAddonInfo('name')
 PRODUCT_PATH = Path("/media/product")
 ENV_TXT = PRODUCT_PATH / "env.txt"
 
+DEVICE_TREE_ID_PATH = "/proc/device-tree/amlogic-dt-id"
+
+# Maps a board's amlogic-dt-id value to the partition device node that
+# holds its env.txt (uboot environment) file.
+BOARD_PARTITION_MAP = {
+    "g12brevb_raven_2g": "/dev/product",
+    "t7_gazelle_pvt": "/dev/vendor_boot",
+}
+
 def notify(msg):
     xbmcgui.Dialog().notification(__addonname__, msg, xbmcgui.NOTIFICATION_INFO, 3000)
 
+def log(msg):
+    xbmc.log(f"[{__addonname__}] {msg}", level=getattr(xbmc, "LOGNOTICE", xbmc.LOGINFO))
+
+def get_dt_id():
+    try:
+        with open(DEVICE_TREE_ID_PATH, "rb") as f:
+            data = f.read()
+        # device-tree string properties are null-terminated; strip that
+        # (and any surrounding whitespace) before comparing.
+        return data.split(b"\x00")[0].decode("utf-8", errors="ignore").strip()
+    except Exception as e:
+        log(f"Failed to read {DEVICE_TREE_ID_PATH}: {e}")
+        return None
+
+def get_boot_partition():
+    dt_id = get_dt_id()
+    if dt_id is None:
+        log("Could not determine device-tree id; defaulting to /dev/product")
+        return "/dev/product"
+
+    partition = BOARD_PARTITION_MAP.get(dt_id)
+    if partition is None:
+        log(f"Unrecognized device-tree id '{dt_id}'; defaulting to /dev/product")
+        return "/dev/product"
+
+    log(f"Device-tree id '{dt_id}' resolved to partition '{partition}'")
+    return partition
+
 def mount_product():
     PRODUCT_PATH.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["mount", "/dev/product", str(PRODUCT_PATH)], check=False)
+    subprocess.run(["mount", get_boot_partition(), str(PRODUCT_PATH)], check=False)
 
 def unmount_product():
     subprocess.run(["umount", str(PRODUCT_PATH)], check=False)
@@ -39,7 +76,7 @@ def set_boot_led_delay():
     try:
         mount_product()
     except:
-        notify("Failed to mount /dev/product")
+        notify(f"Failed to mount {get_boot_partition()}")
         return
 
     if not ENV_TXT.exists():

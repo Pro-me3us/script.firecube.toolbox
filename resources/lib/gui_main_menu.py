@@ -66,6 +66,17 @@ def get_pending_ota_package_size():
                 stderr=subprocess.DEVNULL
             )
 
+def get_device_id():
+    try:
+        with open("/proc/device-tree/amlogic-dt-id", "rb") as f:
+            data = f.read()
+        return data.split(b"\x00")[0].decode("utf-8", errors="ignore").strip()
+    except OSError:
+        return None
+
+RAVEN_DEVICE_ID = "g12brevb_raven_2g"
+GAZELLE_DEVICE_ID = "t7_gazelle_pvt"
+
 def format_size(num_bytes):
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if num_bytes < 1024 or unit == "TB":
@@ -125,9 +136,17 @@ class MainMenu(xbmcgui.WindowXMLDialog):
         xbmc.executebuiltin("SetFocus(1000)")
 
     def load_menu(self):
-        items = MENU_ITEMS.copy()
+        is_raven = get_device_id() == RAVEN_DEVICE_ID
 
-        if os.path.exists(UPDATE_GZ):
+        if is_raven:
+            items = MENU_ITEMS.copy()
+        else:
+            items = [
+                (label, action) for label, action in MENU_ITEMS
+                if action not in ("wifi_mac", "suspend")
+            ]
+
+        if is_raven and os.path.exists(UPDATE_GZ):
             update_ts = cube_update._read_gz_misc_timestamp(UPDATE_GZ)
             current_ts = cube_update._read_misc_timestamp("/dev/misc")
             if update_ts and current_ts and update_ts > current_ts:
@@ -230,7 +249,10 @@ class MainMenu(xbmcgui.WindowXMLDialog):
             commandcraft.run()
 
     def run_move_to_emmc(self, option):
-        if os.path.exists(UPDATE_GZ):
+        # The cube_update / misc.img.gz update-gating mechanism only applies
+        # to raven; gazelle has no such pending-update concept, so skip the
+        # check entirely on that board.
+        if get_device_id() != GAZELLE_DEVICE_ID and os.path.exists(UPDATE_GZ):
             update_ts = cube_update._read_gz_misc_timestamp(UPDATE_GZ)
             current_ts = cube_update._read_misc_timestamp("/dev/misc")
             if update_ts and current_ts and update_ts > current_ts:

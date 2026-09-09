@@ -4,6 +4,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="/storage/downloads/emmc_install.log"
+DT_ID_PATH="/proc/device-tree/amlogic-dt-id"
 
 MODE=""
 
@@ -15,6 +16,18 @@ elif [[ "$1" == "--full" ]]; then
 else
   echo "Usage: $0 [--flash-only | --full]" > /dev/tty0
   exit 1
+fi
+
+# Determine which autoscript/dtb to install based on the board's device-tree
+# id. device-tree string properties are null-terminated, so strip trailing NULs.
+AUTOSCRIPT_SRC="$SCRIPT_DIR/ce_autoscript"
+DTB_SRC="$SCRIPT_DIR/../update/dtb.img"
+if [[ -f "$DT_ID_PATH" ]]; then
+  DT_ID="$(tr -d '\0' < "$DT_ID_PATH")"
+  if [[ "$DT_ID" == "t7_gazelle_pvt" ]]; then
+    AUTOSCRIPT_SRC="$SCRIPT_DIR/ce_autoscript_gazl"
+    DTB_SRC="$SCRIPT_DIR/../update/dtb_gazl.img"
+  fi
 fi
 
 echo "Stopping Kodi..."
@@ -45,7 +58,7 @@ if [[ "$MODE" == "full" ]]; then
 fi
 
 mount -o remount,rw /flash
-cp "$SCRIPT_DIR/../update/dtb.img" /flash/
+cp "$DTB_SRC" /flash/dtb.img
 
 echo ""
 echo "Syncing /flash to /data/coreelec_flash..."
@@ -57,7 +70,7 @@ if [[ "$MODE" == "full" ]]; then
   rsync -ah --info=progress2 /storage/ /media/data/coreelec_storage/
 fi
 
-cp "$SCRIPT_DIR/ce_autoscript" /media/data/coreelec_flash/
+cp "$AUTOSCRIPT_SRC" /media/data/coreelec_flash/ce_autoscript
 
 sync
 umount /media/data

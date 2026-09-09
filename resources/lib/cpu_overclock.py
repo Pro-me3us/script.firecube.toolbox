@@ -9,6 +9,25 @@ import xml.etree.ElementTree as ET
 CONFIG_PATH = "/flash/config.ini"
 SETTINGS_PATH = "/storage/.kodi/userdata/addon_data/service.coreelec.settings/oe_settings.xml"
 AUTOSTART_PATH = "/storage/.config/autostart.sh"
+DT_ID_PATH = "/proc/device-tree/amlogic-dt-id"
+GAZELLE_ID = "t7_gazelle_pvt"
+
+
+# --------------------------------------------------
+# Board detection
+# --------------------------------------------------
+
+def _get_dt_id():
+    try:
+        with open(DT_ID_PATH, "rb") as f:
+            data = f.read()
+        return data.split(b"\x00")[0].decode("utf-8", errors="ignore").strip()
+    except Exception:
+        return None
+
+
+def _is_gazelle():
+    return _get_dt_id() == GAZELLE_ID
 
 
 # --------------------------------------------------
@@ -27,6 +46,18 @@ def _use_cluster_format():
 USE_CLUSTER_FORMAT = _use_cluster_format()
 
 STOCK_FREQ = {"a73": "2208", "a53": "1908"}
+
+# Gazelle's little (A53) cores ship with a different stock frequency than
+# raven's, and are not user-overclockable at all — always locked to stock.
+GAZELLE_STOCK_A53 = "2016"
+
+
+def _get_stock_freq():
+    """Return the board-appropriate stock frequency dict."""
+    stock = STOCK_FREQ.copy()
+    if _is_gazelle():
+        stock["a53"] = GAZELLE_STOCK_A53
+    return stock
 
 
 # --------------------------------------------------
@@ -53,7 +84,7 @@ def _read_current_freq():
         with open(CONFIG_PATH, "r") as f:
             lines = f.readlines()
 
-        freq = STOCK_FREQ.copy()
+        freq = _get_stock_freq()
 
         if USE_CLUSTER_FORMAT:
             for line in lines:
@@ -61,8 +92,8 @@ def _read_current_freq():
                     value = line.split("=", 1)[1].strip()
 
                     clusters = dict(item.split(":") for item in value.split(","))
-                    freq["a53"] = clusters.get("0", STOCK_FREQ["a53"])
-                    freq["a73"] = clusters.get("1", STOCK_FREQ["a73"])
+                    freq["a53"] = clusters.get("0", freq["a53"])
+                    freq["a73"] = clusters.get("1", freq["a73"])
                     break
         else:
             for line in lines:
@@ -78,7 +109,7 @@ def _read_current_freq():
         return freq
 
     except Exception:
-        return STOCK_FREQ.copy()
+        return _get_stock_freq()
 
 
 # --------------------------------------------------
@@ -243,10 +274,11 @@ def _set_governor(governor):
 
 def _write_autostart_fixed():
     try:
+        stock = _get_stock_freq()
         fixed_lines = [
             "#!/bin/sh\n",
-            f"echo {STOCK_FREQ['a53']}000 > /sys/bus/cpu/devices/cpu0/cpufreq/scaling_min_freq\n",
-            f"echo {STOCK_FREQ['a73']}000 > /sys/bus/cpu/devices/cpu2/cpufreq/scaling_min_freq\n"
+            f"echo {stock['a53']}000 > /sys/bus/cpu/devices/cpu0/cpufreq/scaling_min_freq\n",
+            f"echo {stock['a73']}000 > /sys/bus/cpu/devices/cpu2/cpufreq/scaling_min_freq\n"
         ]
 
         if os.path.exists(AUTOSTART_PATH):
@@ -306,22 +338,27 @@ def _remove_autostart_lines():
 def show_overclock_menu():
     freq = _read_current_freq()
     current_governor = _read_current_governor()
+    stock = _get_stock_freq()
 
-    a73_options = ["2208MHz (Stock)", "2304MHz (Overclock)", "2400MHz (Overclock)"]
-    a53_options = ["1908MHz (Stock)", "2016MHz (Overclock)"]
+    gazelle = _is_gazelle()
 
-    a73_values = ["2208", "2304", "2400"]
-    a53_values = ["1908", "2016"]
+    if gazelle:
+        # Gazelle only supports stepping directly from stock to max on the
+        # big cores; no 2304MHz intermediate step.
+        a73_options = ["2208MHz (Stock)", "2400MHz (Overclock)"]
+        a73_values = ["2208", "2400"]
+    else:
+        a73_options = ["2208MHz (Stock)", "2304MHz (Overclock)", "2400MHz (Overclock)"]
+        a73_values = ["2208", "2304", "2400"]
+
+    if not gazelle:
+        a53_options = ["1908MHz (Stock)", "2016MHz (Overclock)"]
+        a53_values = ["1908", "2016"]
 
     try:
         a73_index = a73_values.index(freq["a73"])
     except ValueError:
         a73_index = 0
-
-    try:
-        a53_index = a53_values.index(freq["a53"])
-    except ValueError:
-        a53_index = 0
 
     a73_sel = xbmcgui.Dialog().select(
         f"A73 Core Frequency (Current: {freq['a73']}MHz)",
@@ -332,21 +369,32 @@ def show_overclock_menu():
     if a73_sel == -1:
         return
 
-    a53_sel = xbmcgui.Dialog().select(
-        f"A53 Core Frequency (Current: {freq['a53']}MHz)",
-        a53_options,
-        preselect=a53_index
-    )
-
-    if a53_sel == -1:
-        return
-
     a73_val = a73_values[a73_sel]
-    a53_val = a53_values[a53_sel]
+
+    if gazelle:
+        # Little cores are not user-adjustable on gazelle; keep them at
+        # gazelle's stock frequency (2016MHz).
+        a53_val = stock["a53"]
+    else:
+        try:
+            a53_index = a53_values.index(freq["a53"])
+        except ValueError:
+            a53_index = 0
+
+        a53_sel = xbmcgui.Dialog().select(
+            f"A53 Core Frequency (Current: {freq['a53']}MHz)",
+            a53_options,
+            preselect=a53_index
+        )
+
+        if a53_sel == -1:
+            return
+
+        a53_val = a53_values[a53_sel]
 
     _write_freq_setting(a73_val, a53_val)
 
-    if a73_val != "2208" or a53_val != "1908":
+    if a73_val != stock["a73"] or a53_val != stock["a53"]:
         gov_map = {0: "performance", 1: "ondemand"}
         gov_inv = {"performance": 0, "ondemand": 1}
 

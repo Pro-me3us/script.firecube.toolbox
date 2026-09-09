@@ -9,16 +9,51 @@ from pathlib import Path
 __addon__ = xbmcaddon.Addon()
 __addonname__ = __addon__.getAddonInfo('name')
 
+DEVICE_TREE_ID_PATH = "/proc/device-tree/amlogic-dt-id"
+
+# Maps a board's amlogic-dt-id value to the partition device node that
+# holds its env.txt (uboot environment) file.
+BOARD_PARTITION_MAP = {
+    "g12brevb_raven_2g": "/dev/product",
+    "t7_gazelle_pvt": "/dev/vendor_boot",
+}
+
 def notify(msg):
     xbmcgui.Dialog().notification(__addonname__, msg, xbmcgui.NOTIFICATION_INFO, 3000)
 
 def log(msg):
-    xbmc.log(f"[{__addonname__}] {msg}", level=xbmc.LOGNOTICE)
+    xbmc.log(f"[{__addonname__}] {msg}", level=getattr(xbmc, "LOGNOTICE", xbmc.LOGINFO))
+
+def get_dt_id():
+    try:
+        with open(DEVICE_TREE_ID_PATH, "rb") as f:
+            data = f.read()
+        # device-tree string properties are null-terminated; strip that
+        # (and any surrounding whitespace) before comparing.
+        return data.split(b"\x00")[0].decode("utf-8", errors="ignore").strip()
+    except Exception as e:
+        log(f"Failed to read {DEVICE_TREE_ID_PATH}: {e}")
+        return None
+
+def get_boot_partition():
+    dt_id = get_dt_id()
+    if dt_id is None:
+        log("Could not determine device-tree id; defaulting to /dev/product")
+        return "/dev/product"
+
+    partition = BOARD_PARTITION_MAP.get(dt_id)
+    if partition is None:
+        log(f"Unrecognized device-tree id '{dt_id}'; defaulting to /dev/product")
+        return "/dev/product"
+
+    log(f"Device-tree id '{dt_id}' resolved to partition '{partition}'")
+    return partition
 
 def get_current_boot_order():
+    partition = get_boot_partition()
     try:
         Path("/media/product").mkdir(parents=True, exist_ok=True)
-        subprocess.run(["mount", "/dev/product", "/media/product"], check=True)
+        subprocess.run(["mount", partition, "/media/product"], check=True)
         env_path = Path("/media/product/env.txt")
         if not env_path.exists():
             return 0
@@ -40,11 +75,12 @@ def get_current_boot_order():
         subprocess.run(["umount", "/media/product"], check=False)
 
 def set_boot_order(option):
+    partition = get_boot_partition()
     try:
         Path("/media/product").mkdir(parents=True, exist_ok=True)
-        subprocess.run(["mount", "/dev/product", "/media/product"], check=True)
+        subprocess.run(["mount", partition, "/media/product"], check=True)
     except subprocess.CalledProcessError:
-        notify("Failed to mount /dev/product")
+        notify(f"Failed to mount {partition}")
         return
 
     env_path = Path("/media/product/env.txt")

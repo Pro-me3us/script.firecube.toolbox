@@ -6,13 +6,26 @@ import subprocess
 import xbmcgui
 
 GITHUB_API = "https://api.github.com/repos/Pro-me3us/CommandCraft/releases"
-APK_PREFIX = "raven-"
 APK_DEST = "/media/data/local/tmp"
 SERVICE_SCRIPT_PATH = "/media/data/adb/service.d/commandcraft.sh"
 SERVICE_DIR = os.path.dirname(SERVICE_SCRIPT_PATH)
 MOUNT_POINT = "/media/data"
 DATA_DEVICE = "/dev/data"
 DT_ID_PATH = "/proc/device-tree/amlogic-dt-id"
+
+# Maps a board's amlogic-dt-id value to the release tag CommandCraft
+# publishes for that board (e.g. https://github.com/Pro-me3us/CommandCraft/releases/tag/raven).
+BOARD_APK_TAG = {
+    "g12brevb_raven_2g": "raven",
+    "t7_gazelle_pvt": "gazelle",
+}
+
+
+def get_apk_tag(dt_id):
+    for board_id, tag in BOARD_APK_TAG.items():
+        if board_id in dt_id:
+            return tag
+    return None
 
 
 def run():
@@ -23,7 +36,8 @@ def run():
     with open(DT_ID_PATH, "rb") as f:
         dt_id = f.read().decode("ascii", "ignore").strip().strip('\x00')
 
-    if "g12brevb_raven_2g" not in dt_id:
+    apk_tag = get_apk_tag(dt_id)
+    if apk_tag is None:
         xbmcgui.Dialog().ok("CommandCraft", f"Unsupported device: {dt_id}")
         return
 
@@ -37,7 +51,7 @@ def run():
     apk_url = None
     apk_name = None
     for r in release:
-        if r.get("tag_name", "").startswith(APK_PREFIX):
+        if r.get("tag_name", "") == apk_tag:
             for asset in r.get("assets", []):
                 if asset.get("name", "").endswith(".apk"):
                     apk_url = asset.get("browser_download_url")
@@ -80,4 +94,3 @@ rm /data/adb/service.d/commandcraft.sh
         return
 
     xbmcgui.Dialog().notification("CommandCraft", "CommandCraft installed to FireOS", xbmcgui.NOTIFICATION_INFO, 5000)
-

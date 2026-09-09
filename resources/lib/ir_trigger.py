@@ -1,8 +1,18 @@
+import xbmc
 import xbmcgui
 import subprocess
 from pathlib import Path
 import os
 import time
+
+DEVICE_TREE_ID_PATH = "/proc/device-tree/amlogic-dt-id"
+
+# Maps a board's amlogic-dt-id value to the partition device node that
+# holds its env.txt (uboot environment) file.
+BOARD_PARTITION_MAP = {
+    "g12brevb_raven_2g": "/dev/product",
+    "t7_gazelle_pvt": "/dev/vendor_boot",
+}
 
 OLD_MENU_TRIGGERS = [
     ("FireOS", "irkey-alt-fireos", "irkey-fireos", "0xB54A7D02"),
@@ -25,9 +35,37 @@ ENV_TXT = PRODUCT_PATH / "env.txt"
 def notify(msg):
     xbmcgui.Dialog().notification("IR Boot Triggers", msg, xbmcgui.NOTIFICATION_INFO, 4000)
 
+def log(msg):
+    xbmc.log(f"[IR Boot Triggers] {msg}", level=getattr(xbmc, "LOGNOTICE", xbmc.LOGINFO))
+
+def get_dt_id():
+    try:
+        with open(DEVICE_TREE_ID_PATH, "rb") as f:
+            data = f.read()
+        # device-tree string properties are null-terminated; strip that
+        # (and any surrounding whitespace) before comparing.
+        return data.split(b"\x00")[0].decode("utf-8", errors="ignore").strip()
+    except Exception as e:
+        log(f"Failed to read {DEVICE_TREE_ID_PATH}: {e}")
+        return None
+
+def get_boot_partition():
+    dt_id = get_dt_id()
+    if dt_id is None:
+        log("Could not determine device-tree id; defaulting to /dev/product")
+        return "/dev/product"
+
+    partition = BOARD_PARTITION_MAP.get(dt_id)
+    if partition is None:
+        log(f"Unrecognized device-tree id '{dt_id}'; defaulting to /dev/product")
+        return "/dev/product"
+
+    log(f"Device-tree id '{dt_id}' resolved to partition '{partition}'")
+    return partition
+
 def mount_product():
     PRODUCT_PATH.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["mount", "/dev/product", str(PRODUCT_PATH)], check=False)
+    subprocess.run(["mount", get_boot_partition(), str(PRODUCT_PATH)], check=False)
 
 def unmount_product():
     subprocess.run(["umount", str(PRODUCT_PATH)], check=False)
