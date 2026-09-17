@@ -20,7 +20,7 @@ def notify(msg):
 def parse_bt_config(bt_config_path):
     config = configparser.ConfigParser(strict=False)
     config.optionxform = str
-    config.read(bt_config_path)
+    config.read(bt_config_path, encoding="utf-8")
     return config
 
 def reverse_hex_bytes(hex_str):
