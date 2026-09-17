@@ -32,6 +32,19 @@ NEW_MENU_TRIGGERS = [
 PRODUCT_PATH = Path("/media/product")
 ENV_TXT = PRODUCT_PATH / "env.txt"
 
+# Kernel 5.15 renamed the amremote sysfs class directory from "remote" to
+# "remote0". Try both so this works across kernel versions.
+DEBUG_ENABLE_CANDIDATES = [
+    Path("/sys/class/remote0/amremote/debug_enable"),
+    Path("/sys/class/remote/amremote/debug_enable"),
+]
+
+def get_debug_enable_path():
+    for path in DEBUG_ENABLE_CANDIDATES:
+        if path.exists():
+            return path
+    return None
+
 def notify(msg):
     xbmcgui.Dialog().notification("IR Boot Triggers", msg, xbmcgui.NOTIFICATION_INFO, 4000)
 
@@ -76,8 +89,8 @@ def unmount_product():
     return None
 
 def detect_ir_code(timeout=15):
-    debug_path = Path("/sys/class/remote/amremote/debug_enable")
-    if not debug_path.exists():
+    debug_path = get_debug_enable_path()
+    if debug_path is None:
         notify("amremote driver not loaded")
         return None
     try:
