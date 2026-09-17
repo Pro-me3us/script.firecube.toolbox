@@ -1,0 +1,98 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+LED=/storage/.kodi/addons/service.firecube_lightbar
+USB_POWER_STATE=/run/gazelle-usb-power-off
+
+usb_boot()
+{
+  flash_dev=$(awk '$2=="/flash"{print $1}' /proc/mounts)
+  case "$flash_dev" in
+    /dev/sd*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+unmount_usb_storage()
+{
+  # Flush pending writes
+  sync
+
+  # Unmount filesystems backed by USB storage devices
+  for mountpoint in $(awk '$1 ~ "^/dev/sd[a-z][0-9]*$" {print $2}' /proc/mounts); do
+    [ -n "$mountpoint" ] || continue
+
+    echo "<6>gazelle-usb-power: Unmounting USB storage $mountpoint" > /dev/kmsg
+
+    if ! umount "$mountpoint"; then
+      echo "<3>gazelle-usb-power: Failed to unmount USB storage $mountpoint" > /dev/kmsg
+      return 1
+    fi
+  done
+
+  return 0
+}
+
+case "$1" in
+  pre)
+    python "$LED/led.py" -n1 -b100 -f "$LED/resources/animations/active-end.animation"
+
+    ethtool -s eth0 wol d
+    rfkill block bluetooth
+
+    # Remove any stale state
+    rm -f "$USB_POWER_STATE"
+
+    # Only handle USB storage if CoreELEC is not booting from USB
+    if ! usb_boot; then
+
+      # Only disable USB power if all USB storage can be unmounted
+      if unmount_usb_storage; then
+
+        # Disable USB power
+        devmem 0xfe004188 32 $(( $(devmem 0xfe004188 32) & ~(1 << 16) ))
+        devmem 0xfe004184 32 $(( $(devmem 0xfe004184 32) & ~(1 << 16) ))
+        devmem 0xfe002040 32 $(( $(devmem 0xfe002040 32) & ~(1 << 8) ))
+
+        # Remember that this script disabled USB power
+        touch "$USB_POWER_STATE"
+
+        echo "<6>gazelle-usb-power: USB power disabled" > /dev/kmsg
+      else
+        echo "<3>gazelle-usb-power: USB storage still mounted, leaving USB power on" > /dev/kmsg
+      fi
+    fi
+    ;;
+
+  post)
+    systemd-run --no-block python "$LED/led.py" -n1 -b100 -f "$LED/resources/animations/active-thinking.animation"
+
+    # Re-enable HDMI v5 GPIO on every wakeup
+    for chip in /sys/class/gpio/gpiochip*; do
+      [ "$(cat "$chip/label" 2>/dev/null)" = periphs-banks ] && [ "$(cat "$chip/ngpio" 2>/dev/null)" = 157 ] || continue
+
+      gpio=$(($(cat "$chip/base") + 38))
+
+      echo "$gpio" > /sys/class/gpio/export &&
+        echo high > /sys/class/gpio/gpio${gpio}/direction
+      echo "$gpio" > /sys/class/gpio/unexport
+
+      echo "<6>gazelle-hdmi-power: Restored GPIOX_18 high (gpio=$gpio)" > /dev/kmsg
+      break
+    done
+
+    # Only restore USB power if this script disabled it during pre
+    if [ -f "$USB_POWER_STATE" ]; then
+      devmem 0xfe004188 32 $(( $(devmem 0xfe004188 32) & ~(1 << 16) ))
+      devmem 0xfe004184 32 $(( $(devmem 0xfe004184 32) | (1 << 16) ))
+      devmem 0xfe002040 32 $(( $(devmem 0xfe002040 32) | (1 << 8) ))
+
+      rm -f "$USB_POWER_STATE"
+
+      echo "<6>gazelle-usb-power: USB power restored" > /dev/kmsg
+    fi
+    
+    rfkill unblock bluetooth
+    ethtool -s eth0 wol g
+    ;;
+esac

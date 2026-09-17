@@ -2,6 +2,7 @@
 import xbmcgui
 import xbmc
 import os
+import shutil
 import subprocess
 import xbmcaddon
 
@@ -76,6 +77,7 @@ def get_device_id():
 
 RAVEN_DEVICE_ID = "g12brevb_raven_2g"
 GAZELLE_DEVICE_ID = "t7_gazelle_pvt"
+GAZELLE_SUSPEND_DESCRIPTION = "Fixes various issues with waking up from suspend.  Includes power optimizations for suspend and shutdown"
 
 def format_size(num_bytes):
     for unit in ("B", "KB", "MB", "GB", "TB"):
@@ -136,14 +138,23 @@ class MainMenu(xbmcgui.WindowXMLDialog):
         xbmc.executebuiltin("SetFocus(1000)")
 
     def load_menu(self):
-        is_raven = get_device_id() == RAVEN_DEVICE_ID
+        device_id = get_device_id()
+        is_raven = device_id == RAVEN_DEVICE_ID
+        is_gazelle = device_id == GAZELLE_DEVICE_ID
+
+        menu_items = MENU_ITEMS.copy()
+        if is_gazelle:
+            menu_items = [
+                ("Wakeup from suspend & shutdown patch", action) if action == "suspend" else (label, action)
+                for label, action in menu_items
+            ]
 
         if is_raven:
-            items = MENU_ITEMS.copy()
+            items = menu_items
         else:
             items = [
-                (label, action) for label, action in MENU_ITEMS
-                if action not in ("wifi_mac", "suspend")
+                (label, action) for label, action in menu_items
+                if action not in ("wifi_mac")
             ]
 
         if is_raven and os.path.exists(UPDATE_GZ):
@@ -185,7 +196,10 @@ class MainMenu(xbmcgui.WindowXMLDialog):
         selected_pos = self.list.getSelectedPosition()
         if 0 <= selected_pos < len(self.menu_items):
             _, action = self.menu_items[selected_pos]
-            description = DESCRIPTIONS.get(action, "")
+            if action == "suspend" and get_device_id() == GAZELLE_DEVICE_ID:
+                description = GAZELLE_SUSPEND_DESCRIPTION
+            else:
+                description = DESCRIPTIONS.get(action, "")
             self.desc.setText(description)
 
     def onAction(self, action):
@@ -222,7 +236,10 @@ class MainMenu(xbmcgui.WindowXMLDialog):
         elif action == "wifi_mac":
             change_wifi_mac.show_wifi_mac_menu()
         elif action == "suspend":
-            suspend_service.show_suspend_menu()
+            if get_device_id() == GAZELLE_DEVICE_ID:
+                self.apply_gazelle_suspend_patch()
+            else:
+                suspend_service.show_suspend_menu()
         elif action == "move_emmc":
             move_opts = ["Move /flash + /storage to eMMC (full migration)", "/flash only (hybrid USB/eMMC install)"]
             sel = xbmcgui.Dialog().select("Move to eMMC", move_opts)
@@ -247,6 +264,26 @@ class MainMenu(xbmcgui.WindowXMLDialog):
                 self.update_description()
         elif action == "commandcraft":
             commandcraft.run()
+
+    def apply_gazelle_suspend_patch(self):
+        GAZELLE_PATCH_SRC = os.path.join(ADDON_PATH, "resources", "service", "50-gazelle.power")
+        GAZELLE_PATCH_DST_DIR = "/storage/.config/sleep.d"
+        GAZELLE_PATCH_DST = os.path.join(GAZELLE_PATCH_DST_DIR, "50-gazelle.power")
+        GAZELLE_SHUTDOWN_SRC = os.path.join(ADDON_PATH, "resources", "service", "shutdown.sh")
+        GAZELLE_SHUTDOWN_DST = "/storage/.config/shutdown.sh"
+
+        try:
+            os.makedirs(GAZELLE_PATCH_DST_DIR, exist_ok=True)
+
+            shutil.copyfile(GAZELLE_PATCH_SRC, GAZELLE_PATCH_DST)
+            os.chmod(GAZELLE_PATCH_DST, 0o755)
+
+            shutil.copyfile(GAZELLE_SHUTDOWN_SRC, GAZELLE_SHUTDOWN_DST)
+            os.chmod(GAZELLE_SHUTDOWN_DST, 0o755)
+
+            xbmcgui.Dialog().ok("Wakeup from suspend patch", "Suspend/Shutdown patches applied.")
+        except OSError as e:
+            xbmcgui.Dialog().ok("Wakeup from suspend patch", f"Failed to apply patch: {e}")
 
     def run_move_to_emmc(self, option):
         # The cube_update / misc.img.gz update-gating mechanism only applies
