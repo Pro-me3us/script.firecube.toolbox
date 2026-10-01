@@ -2,6 +2,26 @@
 
 LED=/storage/.kodi/addons/service.firecube_lightbar
 
+set_gpio()
+{
+  offset="$1"
+  value="$2"
+  name="$3"
+
+  for chip in /sys/class/gpio/gpiochip*; do
+    [ "$(cat "$chip/label" 2>/dev/null)" = periphs-banks ] && [ "$(cat "$chip/ngpio" 2>/dev/null)" = 157 ] || continue
+
+    gpio=$(($(cat "$chip/base") + offset))
+
+    echo "$gpio" > /sys/class/gpio/export &&
+      echo "$value" > /sys/class/gpio/gpio${gpio}/direction
+    echo "$gpio" > /sys/class/gpio/unexport
+
+    echo "<6>gazelle-power: Set $name $value (gpio=$gpio)" > /dev/kmsg
+    break
+  done
+}
+
 usb_boot()
 {
   flash_dev=$(awk '$2=="/flash"{print $1}' /proc/mounts)
@@ -21,16 +41,17 @@ unmount_usb_storage()
   for mountpoint in $(awk '$1 ~ "^/dev/sd[a-z][0-9]*$" {print $2}' /proc/mounts); do
     [ -n "$mountpoint" ] || continue
 
-    echo "<6>gazelle-usb-power: Unmounting USB storage $mountpoint" > /dev/kmsg
+    echo "<6>gazelle-power: Unmounting USB storage $mountpoint" > /dev/kmsg
 
     if ! umount "$mountpoint"; then
-      echo "<3>gazelle-usb-power: Failed to unmount USB storage $mountpoint" > /dev/kmsg
+      echo "<3>gazelle-power: Failed to unmount USB storage $mountpoint" > /dev/kmsg
       return 1
     fi
   done
 
   return 0
 }
+
 
 # Only handle USB storage if CoreELEC is not booting from USB
 if ! usb_boot; then
@@ -39,20 +60,24 @@ if ! usb_boot; then
   if unmount_usb_storage; then
 
     # Disable USB power
-    devmem 0xfe004188 32 $(( $(devmem 0xfe004188 32) & ~(1 << 16) ))
-    devmem 0xfe004184 32 $(( $(devmem 0xfe004184 32) & ~(1 << 16) ))
-    devmem 0xfe002040 32 $(( $(devmem 0xfe002040 32) & ~(1 << 8) ))
+    set_gpio 36 low "GPIOX_16"
 
-    echo "<6>gazelle-usb-power: USB power disabled" > /dev/kmsg
+    echo "<6>gazelle-power: USB power disabled" > /dev/kmsg
   else
-    echo "<3>gazelle-usb-power: USB storage still mounted, leaving USB power on" > /dev/kmsg
+    echo "<3>gazelle-power: USB storage still mounted, leaving USB power on" > /dev/kmsg
   fi
 else
-  echo "<6>gazelle-usb-power: CoreELEC booted from USB, leaving USB storage and power on" > /dev/kmsg
+  echo "<6>gazelle-power: CoreELEC booted from USB, leaving USB storage and power on" > /dev/kmsg
 fi
 
-# Disable WOL
+
+
+# Disable HDMI v5
+set_gpio 38 low "GPIOX_18"
+
+# Take ethernet offline
 ethtool -s eth0 wol d
+ip link set eth0 down
 
 # Set LED bar red
 python "$LED/led.py" -b 50 -c ff0000

@@ -18,7 +18,8 @@ from resources.lib import (
     ir_trigger,
     button_trigger,
     dv_download,
-    commandcraft
+    commandcraft,
+    zram
 )
 
 ADDON_PATH = xbmcaddon.Addon().getAddonInfo('path')
@@ -93,6 +94,7 @@ MENU_ITEMS = [
     ("Change WiFi MAC address", "wifi_mac"),
     ("Enable suspend & IR triggered wakeup", "suspend"),
     ("Copy CoreELEC installation from USB to eMMC", "move_emmc"),
+    ("Add ZRAM swap", "zram"),
     ("Install CommandCraft app to FireOS", "commandcraft"),
     ("Set boot order", "boot_order"),
     ("Set boot trigger delay (green LED)", "boot_delay"),
@@ -113,6 +115,7 @@ DESCRIPTIONS = {
     "ir_trigger": "Configure what IR codes trigger what boot option.  Each boot option can be triggered by two different IR codes, to use more than one remote model.  Use the IR code detect option if unsure of the code, only works with the NEC protocol.",
     "cube_button": "Configure the Cube Volume Up/Down and Action buttons to trigger boot target during green LED.  Volume Up (fastboot), Volume Down (TWRP) and Action (AML Update) buttons can also be held down before the green LED for additional options.",
     "overclock": "Overclock big/little cores up to 2.4GHz/2.0GHz for a 9-10% performance boost.  The ondemand option keeps the stock CPU frequencies, only ramping up overclocked frequencies under high CPU load.  Use cautiously. Reboot required.",
+    "zram": "Creates compressed swap space in RAM, giving the Cube extra memory headroom to reduce out-of-memory crashes with heavy add-ons or large libraries.",
     "enable_dv": "Add Dolby Vision module to Cube (/storage/dovi.ko) to enable DV playback.  Requires a reboot.",
     "commandcraft": "CommandCraft is a lightweight FireOS/Android app (60KB) that makes it easy to select any of the Cube's rebooting options (FireOS, TWRP, CE, Fastboot, USB Boot, AML update, power off, soft reboot).  Edit or add your own ADB shell buttons."
 }
@@ -257,6 +260,8 @@ class MainMenu(xbmcgui.WindowXMLDialog):
             button_trigger.get_cube_button_triggers()
         elif action == "overclock":
             cpu_overclock.show_overclock_menu()
+        elif action == "zram":
+            zram.show_zram_menu()
         elif action == "enable_dv":
             if dv_download.enable_dolby_vision():
                 self.list.reset()

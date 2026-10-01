@@ -22,10 +22,10 @@ unmount_usb_storage()
   for mountpoint in $(awk '$1 ~ "^/dev/sd[a-z][0-9]*$" {print $2}' /proc/mounts); do
     [ -n "$mountpoint" ] || continue
 
-    echo "<6>gazelle-usb-power: Unmounting USB storage $mountpoint" > /dev/kmsg
+    echo "<6>gazelle-power: Unmounting USB storage $mountpoint" > /dev/kmsg
 
     if ! umount "$mountpoint"; then
-      echo "<3>gazelle-usb-power: Failed to unmount USB storage $mountpoint" > /dev/kmsg
+      echo "<3>gazelle-power: Failed to unmount USB storage $mountpoint" > /dev/kmsg
       return 1
     fi
   done
@@ -33,13 +33,37 @@ unmount_usb_storage()
   return 0
 }
 
+set_gpio()
+{
+  offset="$1"
+  value="$2"
+  name="$3"
+
+  for chip in /sys/class/gpio/gpiochip*; do
+    [ "$(cat "$chip/label" 2>/dev/null)" = periphs-banks ] && [ "$(cat "$chip/ngpio" 2>/dev/null)" = 157 ] || continue
+
+    gpio=$(($(cat "$chip/base") + offset))
+
+    echo "$gpio" > /sys/class/gpio/export &&
+      echo "$value" > /sys/class/gpio/gpio${gpio}/direction
+    echo "$gpio" > /sys/class/gpio/unexport
+
+    echo "<6>gazelle-power: Set $name $value (gpio=$gpio)" > /dev/kmsg
+    break
+  done
+}
+
 case "$1" in
   pre)
+    kodi-send --action="NotifyAll(lightbar,off)"
+    sleep .2
     python "$LED/led.py" -n1 -b100 -f "$LED/resources/animations/active-end.animation"
+    sleep 1
 
     ethtool -s eth0 wol d
+    ip link set eth0 down
     rfkill block bluetooth
-
+    
     # Remove any stale state
     rm -f "$USB_POWER_STATE"
 
@@ -50,16 +74,14 @@ case "$1" in
       if unmount_usb_storage; then
 
         # Disable USB power
-        devmem 0xfe004188 32 $(( $(devmem 0xfe004188 32) & ~(1 << 16) ))
-        devmem 0xfe004184 32 $(( $(devmem 0xfe004184 32) & ~(1 << 16) ))
-        devmem 0xfe002040 32 $(( $(devmem 0xfe002040 32) & ~(1 << 8) ))
+        set_gpio 36 low "GPIOX_16"
 
         # Remember that this script disabled USB power
         touch "$USB_POWER_STATE"
 
-        echo "<6>gazelle-usb-power: USB power disabled" > /dev/kmsg
+        echo "<6>gazelle-power: USB power disabled" > /dev/kmsg
       else
-        echo "<3>gazelle-usb-power: USB storage still mounted, leaving USB power on" > /dev/kmsg
+        echo "<3>gazelle-power: USB storage still mounted, leaving USB power on" > /dev/kmsg
       fi
     fi
     ;;
@@ -67,32 +89,22 @@ case "$1" in
   post)
     systemd-run --no-block python "$LED/led.py" -n1 -b100 -f "$LED/resources/animations/active-thinking.animation"
 
-    # Re-enable HDMI v5 GPIO on every wakeup
-    for chip in /sys/class/gpio/gpiochip*; do
-      [ "$(cat "$chip/label" 2>/dev/null)" = periphs-banks ] && [ "$(cat "$chip/ngpio" 2>/dev/null)" = 157 ] || continue
+    # Re-enable HDMI v5 GPIO
+    set_gpio 38 high "GPIOX_18"
+    echo "<6>gazelle-power: HDMI v5 restored" > /dev/kmsg
 
-      gpio=$(($(cat "$chip/base") + 38))
-
-      echo "$gpio" > /sys/class/gpio/export &&
-        echo high > /sys/class/gpio/gpio${gpio}/direction
-      echo "$gpio" > /sys/class/gpio/unexport
-
-      echo "<6>gazelle-hdmi-power: Restored GPIOX_18 high (gpio=$gpio)" > /dev/kmsg
-      break
-    done
-
-    # Only restore USB power if this script disabled it during pre
+    # Only restore USB power if script disabled it during pre
     if [ -f "$USB_POWER_STATE" ]; then
-      devmem 0xfe004188 32 $(( $(devmem 0xfe004188 32) & ~(1 << 16) ))
-      devmem 0xfe004184 32 $(( $(devmem 0xfe004184 32) | (1 << 16) ))
-      devmem 0xfe002040 32 $(( $(devmem 0xfe002040 32) | (1 << 8) ))
+      set_gpio 36 high "GPIOX_16"
 
       rm -f "$USB_POWER_STATE"
 
-      echo "<6>gazelle-usb-power: USB power restored" > /dev/kmsg
+      echo "<6>gazelle-power: USB power restored" > /dev/kmsg
     fi
     
     rfkill unblock bluetooth
+    ip link set eth0 up
     ethtool -s eth0 wol g
+    systemd-run --no-block kodi-send --action="NotifyAll(lightbar,on)"
     ;;
 esac

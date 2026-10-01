@@ -7,12 +7,19 @@ import subprocess
 from pathlib import Path
 import configparser
 import time
+import sys
 
-__addon__ = xbmcaddon.Addon()
-__addonname__ = __addon__.getAddonInfo('name')
+try:
+    __addon__ = xbmcaddon.Addon('script.firecube.toolbox')
+    __addonname__ = __addon__.getAddonInfo('name')
+except RuntimeError:
+    __addon__ = None
+    __addonname__ = "Fire Cube Toolbox"
+
+QUIET_MODE = '--autostart' in sys.argv
 
 def log(msg):
-    xbmc.log(f"[{__addonname__}] {msg}", level=xbmc.LOGNOTICE)
+    xbmc.log(f"[{__addonname__}] {msg}", level=xbmc.LOGINFO)
 
 def notify(msg):
     xbmcgui.Dialog().notification(__addonname__, msg, xbmcgui.NOTIFICATION_INFO, 3000)
@@ -233,9 +240,16 @@ def sync_firetv_remote():
     subprocess.run(["systemctl", "restart", "bluetooth.service"], check=False)
 
     if imported_macs:
-        xbmcgui.Dialog().ok(__addonname__, f"Imported remotes:\n" + '\n'.join(imported_macs))
+        if not QUIET_MODE:
+            xbmcgui.Dialog().ok(
+                __addonname__,
+                f"Imported remotes:\n" + '\n'.join(imported_macs)
+            )
+        else:
+            log(f"Imported remotes: {', '.join(imported_macs)}")
     else:
-        notify("No remotes were imported.")
+        if not QUIET_MODE:
+            notify("No remotes were imported.")
 
     return True
 
@@ -250,4 +264,7 @@ def show_multitool_menu():
         sync_firetv_remote()
 
 if __name__ == '__main__':
-    show_multitool_menu()
+    if '--autostart' in sys.argv:
+        sync_firetv_remote()
+    else:
+        show_multitool_menu()
