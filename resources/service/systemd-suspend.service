@@ -13,3 +13,4 @@ Description=System Suspend
 [Service]
 Type=oneshot
 ExecStart=/storage/.config/system.d/suspend.sh pause
+KillMode=process

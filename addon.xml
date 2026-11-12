@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.firecube.toolbox"
        name="Fire Cube Toolbox"
-       version="2.2"
+       version="2.3"
        provider-name="pro-me3us">
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>
@@ -12,6 +12,10 @@
         <description>CoreELEC and bootup customizations, includes copying CE to eMMC, syncing BT remotes between FireOS/CE, changing boot order, and more. </description>
         <platform>all</platform>
         <news>
+v2.3 (2026-11-12)
+- suspend service fix for 2nd gen Cube to prevent script processes from being killed before they finish
+- supsend script fix for 2nd gen Cube to make lightbar animations stop and restart on suspend/wakeup  
+- remove USB and HDMI power handling from suspend and shutdown scripts, now handled by kernel and dtb       
 v2.2 (2026-10-01)
 - Added ZRAM swap option
 - tweaked wakeup / suspend patch

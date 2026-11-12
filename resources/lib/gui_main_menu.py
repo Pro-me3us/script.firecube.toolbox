@@ -23,7 +23,6 @@ from resources.lib import (
 )
 
 ADDON_PATH = xbmcaddon.Addon().getAddonInfo('path')
-UPDATE_GZ = os.path.join(ADDON_PATH, "resources", "update", "misc.img.gz")
 
 def get_pending_ota_package_size():
     mountpoint = "/media/data"
@@ -160,11 +159,8 @@ class MainMenu(xbmcgui.WindowXMLDialog):
                 if action not in ("wifi_mac")
             ]
 
-        if is_raven and os.path.exists(UPDATE_GZ):
-            update_ts = cube_update._read_gz_misc_timestamp(UPDATE_GZ)
-            current_ts = cube_update._read_misc_timestamp("/dev/misc")
-            if update_ts and current_ts and update_ts > current_ts:
-                items.insert(0, ("Cube update for CE available", "cube_update"))
+        if cube_update.is_update_pending(device_id):
+            items.insert(0, ("Cube update for CE available", "cube_update"))
                 
         ota_size = get_pending_ota_package_size()
 
@@ -291,15 +287,11 @@ class MainMenu(xbmcgui.WindowXMLDialog):
             xbmcgui.Dialog().ok("Wakeup from suspend patch", f"Failed to apply patch: {e}")
 
     def run_move_to_emmc(self, option):
-        # The cube_update / misc.img.gz update-gating mechanism only applies
-        # to raven; gazelle has no such pending-update concept, so skip the
-        # check entirely on that board.
-        if get_device_id() != GAZELLE_DEVICE_ID and os.path.exists(UPDATE_GZ):
-            update_ts = cube_update._read_gz_misc_timestamp(UPDATE_GZ)
-            current_ts = cube_update._read_misc_timestamp("/dev/misc")
-            if update_ts and current_ts and update_ts > current_ts:
-                xbmcgui.Dialog().ok("Cube Update Required", "Please apply the available Cube Update before eMMC migration")
-                return
+        # The pending-update gate before migration only applies to raven;
+        # gazelle updates are optional and don't block eMMC migration.
+        if get_device_id() == RAVEN_DEVICE_ID and cube_update.is_update_pending(RAVEN_DEVICE_ID):
+            xbmcgui.Dialog().ok("Cube Update Required", "Please apply the available Cube Update before eMMC migration")
+            return
 
         script_path = "/storage/.kodi/addons/script.firecube.toolbox/resources/bin/emmc_install.sh"
         arg = "--flash-only" if option == "flash" else "--full"

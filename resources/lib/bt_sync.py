@@ -262,9 +262,10 @@ def show_multitool_menu():
 
     if choice == 0:
         sync_firetv_remote()
-
+        
 if __name__ == '__main__':
     if '--autostart' in sys.argv:
-        sync_firetv_remote()
+        if sync_firetv_remote():
+            open("/tmp/bt_sync_autostart.done", "w").close()
     else:
-        show_multitool_menu()
+        show_multitool_menu()        

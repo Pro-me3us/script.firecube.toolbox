@@ -151,7 +151,8 @@ wifi_recover() {
 printf '\x20\x36' > /dev/aocec &
 
 # LED suspend animation
-systemd-run --no-block python "$LED/led.py" -n1 -b100 -f "$LED/resources/animations/active-end.animation"
+kodi-send --action="NotifyAll(lightbar,off)" 
+python "$LED/led.py" -n1 -b100 -f "$LED/resources/animations/active-end.animation" &
 
 systemctl mask suspend.target
 
@@ -223,7 +224,8 @@ echo $min > $CPU0/scaling_min_freq
 { echo ondemand > $CPU2/scaling_governor; sleep 0.75; echo performance > $CPU2/scaling_governor; sleep 0.75; echo $gov1 > $CPU2/scaling_governor; } &
 
 # LED wakeup animation
-systemd-run --no-block python "$LED/led.py" -n1 -b100 -f "$LED/resources/animations/active-thinking.animation"
+python "$LED/led.py" -n1 -b100 -f "$LED/resources/animations/active-thinking.animation" & 
+kodi-send --action="NotifyAll(lightbar,on)" &
 
 # Turn on TV
 printf '\x20\x04' > /dev/aocec &

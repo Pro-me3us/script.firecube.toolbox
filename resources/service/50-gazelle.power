@@ -2,36 +2,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 LED=/storage/.kodi/addons/service.firecube_lightbar
-USB_POWER_STATE=/run/gazelle-usb-power-off
-
-usb_boot()
-{
-  flash_dev=$(awk '$2=="/flash"{print $1}' /proc/mounts)
-  case "$flash_dev" in
-    /dev/sd*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-unmount_usb_storage()
-{
-  # Flush pending writes
-  sync
-
-  # Unmount filesystems backed by USB storage devices
-  for mountpoint in $(awk '$1 ~ "^/dev/sd[a-z][0-9]*$" {print $2}' /proc/mounts); do
-    [ -n "$mountpoint" ] || continue
-
-    echo "<6>gazelle-power: Unmounting USB storage $mountpoint" > /dev/kmsg
-
-    if ! umount "$mountpoint"; then
-      echo "<3>gazelle-power: Failed to unmount USB storage $mountpoint" > /dev/kmsg
-      return 1
-    fi
-  done
-
-  return 0
-}
 
 set_gpio()
 {
@@ -63,44 +33,10 @@ case "$1" in
     ethtool -s eth0 wol d
     ip link set eth0 down
     rfkill block bluetooth
-    
-    # Remove any stale state
-    rm -f "$USB_POWER_STATE"
-
-    # Only handle USB storage if CoreELEC is not booting from USB
-    if ! usb_boot; then
-
-      # Only disable USB power if all USB storage can be unmounted
-      if unmount_usb_storage; then
-
-        # Disable USB power
-        set_gpio 36 low "GPIOX_16"
-
-        # Remember that this script disabled USB power
-        touch "$USB_POWER_STATE"
-
-        echo "<6>gazelle-power: USB power disabled" > /dev/kmsg
-      else
-        echo "<3>gazelle-power: USB storage still mounted, leaving USB power on" > /dev/kmsg
-      fi
-    fi
     ;;
 
   post)
     systemd-run --no-block python "$LED/led.py" -n1 -b100 -f "$LED/resources/animations/active-thinking.animation"
-
-    # Re-enable HDMI v5 GPIO
-    set_gpio 38 high "GPIOX_18"
-    echo "<6>gazelle-power: HDMI v5 restored" > /dev/kmsg
-
-    # Only restore USB power if script disabled it during pre
-    if [ -f "$USB_POWER_STATE" ]; then
-      set_gpio 36 high "GPIOX_16"
-
-      rm -f "$USB_POWER_STATE"
-
-      echo "<6>gazelle-power: USB power restored" > /dev/kmsg
-    fi
     
     rfkill unblock bluetooth
     ip link set eth0 up
